@@ -25,10 +25,21 @@ def disparity_to_pointcloud(disp: np.ndarray, K: np.ndarray, baseline: float):
     # TODO(student): Implement unprojection from disparity to 3D points in camera frame.
     
     # Placeholder (keeps script runnable):
-    stereo_pts = np.array([[0.0, 0.0, 5.0]], dtype=np.float32)
-    valid = np.zeros_like(disp, dtype=bool)
-    valid[0, 0] = True
+    # stereo_pts = np.array([[0.0, 0.0, 5.0]], dtype=np.float32)
+    # valid = np.zeros_like(disp, dtype=bool)
+    # valid[0, 0] = True
+    fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
 
+    Z = fx * baseline / disp
+    valid = Z > 0
+    x, y = np.meshgrid(
+        np.arange(disp.shape[1]),
+        np.arange(disp.shape[0]),
+    )
+
+    X = (x - cx) * Z / fx
+    Y = (y - cy) * Z / fy
+    stereo_pts = np.stack([X, Y, Z], axis=-1)[valid].reshape(-1, 3)
     # ======= STUDENT TODO END (do not change code outside this block) =======
     return stereo_pts, valid
 
@@ -79,10 +90,16 @@ def icp_align(
     # TODO(student): Call Open3D ICP to align source -> target.
 
     # Placeholder (keeps script runnable):
-    reg = o3d.pipelines.registration.RegistrationResult()
-    reg.transformation = np.eye(4, dtype=np.float32)
-    reg.fitness = 0.0
-    reg.inlier_rmse = 0.0
+    # reg = o3d.pipelines.registration.RegistrationResult()
+    # reg.transformation = np.eye(4, dtype=np.float32)
+    # reg.fitness = 0.0
+    # reg.inlier_rmse = 0.0
+
+    reg = o3d.pipelines.registration.registration_icp(
+        source, target, threshold, np.eye(4, dtype=np.float32),
+        o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=max_iteration)
+    )
 
     # ======= STUDENT TODO END (do not change code outside this block) =======
     return reg
