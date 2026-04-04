@@ -28,8 +28,11 @@ def world_to_pixel(xy: np.ndarray, map_spec: MapSpec) -> np.ndarray:
     # 5) make sure to avoid using for loops
 
     # placeholders 
-    cols = np.zeros_like(xy[:, 0], dtype=np.int64)
-    rows = np.zeros_like(xy[:, 1], dtype=np.int64)
+    # cols = np.zeros_like(xy[:, 0], dtype=np.int64)
+    # rows = np.zeros_like(xy[:, 1], dtype=np.int64)
+
+    cols = np.floor((xy[:, 0] - map_spec.x_min) / map_spec.resolution).astype(dtype=np.int64)
+    rows = np.floor((- xy[:, 1] + map_spec.y_max) / map_spec.resolution).astype(dtype=np.int64)
 
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
@@ -61,8 +64,11 @@ def rasterize_topdown(points_world: list[np.ndarray], map_spec: MapSpec) -> dict
         
         # placeholders
         rc = world_to_pixel(xy, map_spec)
-        rows = rc[:, 0]
-        cols = rc[:, 1]
+        rows = rc[:, 0].copy()
+        cols = rc[:, 1].copy()
+        in_map = (0 <= rows) & (rows < map_spec.height) & (0 <= cols) & (cols < map_spec.width)
+        rows = rows[in_map]
+        cols = cols[in_map]
 
         # ======= STUDENT TODO END (do not change code outside this block) =======
         
@@ -85,9 +91,26 @@ def build_accumulated_map(static_points: list[np.ndarray], poses_se2: np.ndarray
     
     # ======= STUDENT TODO START (edit only inside this block) =======
     # TODO(student): implement build_accumulated_map
-    
-    # placeholders
-    world_points = [static_points[0]]
+    world_points = []
+    for static_points_np, poses_se2_np in zip(static_points, poses_se2):
+        x, y, theta = poses_se2_np
+        cos_theta = np.cos(theta)
+        sin_theta = np.sin(theta)
+
+        static_points_2d_np = np.concatenate([static_points_np[:, :2], np.ones((static_points_np.shape[0], 1))], axis=1)
+        T_se2 = np.array(
+            [
+                [cos_theta, -sin_theta, x],
+                [sin_theta, cos_theta, y],
+                [0., 0., 1.],
+            ]
+        )
+
+        transformed_static_points_2d_np = static_points_2d_np @ T_se2.T
+        transformed_static_points_np = static_points_np.copy()
+        transformed_static_points_np[:, :2] = transformed_static_points_2d_np[:, :2]
+
+        world_points.append(transformed_static_points_np)
 
     # ======= STUDENT TODO END (do not change code outside this block) =======
 

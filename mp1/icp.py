@@ -5,7 +5,7 @@ import math
 import numpy as np
 import open3d as o3d
 
-from utils.geometry_utils import se3_to_se2
+from utils.geometry_utils import se3_to_se2, se2_to_matrix, matrix_to_se2
 
 
 def _to_open3d_cloud(points_xyz: np.ndarray):
@@ -59,10 +59,18 @@ def run_pairwise_icp(
     # TODO(student): implement pairwise ICP similar to MP0
     
     # placeholder
-    result = o3d.pipelines.registration.RegistrationResult()
-    result.transformation = np.eye(4, dtype=np.float32)
+    # result = o3d.pipelines.registration.RegistrationResult()
+    # result.transformation = np.eye(4, dtype=np.float32)
+    # init_xform = np.eye(4)
+    # init_xform[:3, 3] = (target_points.mean(axis=0) - source_points.mean(axis=0))[:3]
+    result = o3d.pipelines.registration.registration_icp(
+        source=source, target=target, max_correspondence_distance=max_correspondence_distance,
+        init=np.eye(4, dtype=np.float64),
+        # init=init_xform,
+        estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPoint(),
+        criteria=o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=max_iterations),
+    )
 
-    
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
     rel_se3 = np.asarray(result.transformation, dtype=np.float64)
@@ -101,6 +109,15 @@ def compute_icp_chains(
     
     # placeholders
     icp_poses = np.zeros((num_frames, 3), dtype=np.float64)
+
+    icp_pose_curr = np.eye(3, dtype=np.float64)
+    for t in range(num_frames - 1):
+        pose_2e = run_pairwise_icp(static_points[t][:, :3], static_points[t+1][:, :3], voxel_size, max_correspondence_distance, max_iterations)
+        edges.append([t, t+1, *matrix_to_se2(np.linalg.inv(se2_to_matrix(pose_2e)))])
+
+        icp_pose_curr = icp_pose_curr @ np.linalg.inv(se2_to_matrix(pose_2e))
+        # icp_pose_curr = icp_pose_curr @ se2_to_matrix(pose_2e)
+        icp_poses[t+1] = matrix_to_se2(icp_pose_curr)
 
     # ======= STUDENT TODO END (do not change code outside this block) =======
 

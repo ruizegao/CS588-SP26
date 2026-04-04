@@ -6,6 +6,9 @@ import numpy as np
 
 from slam_factors import distance_factor, motion_factor
 
+from scipy.linalg import cho_factor, cho_solve
+
+import time
 
 @dataclass
 class GraphSlamProblem:
@@ -138,6 +141,7 @@ def solve_graph_slam(
     cost_history: list[float] = []
     first_jacobian = None
 
+    linear_solve_time = []
     for _ in range(max_iterations):
         r, J, poses, landmarks = build_linear_system(problem, state)
         if first_jacobian is None:
@@ -155,10 +159,19 @@ def solve_graph_slam(
         # 4) Form candidate_state = state + dx and evaluate candidate cost 
         # 5) Done for you: Assign candidate_state to state and break early if the new cost is similar to the current cost
         # 6) Optional: Add a small step size to dx if needed 
-        
-        # placeholder
-        candidate_state = state
-        new_cost = cost + 1.0
+
+        t0 = time.perf_counter()
+        A = J.T @ J
+        b = -J.T @ r
+        A = A + damping * np.eye(A.shape[0])
+        dx = np.linalg.solve(A, b)
+        # c, lower = cho_factor(A, lower=True, check_finite=False)
+        # dx = cho_solve((c, lower), b, check_finite=False)
+        t1 = time.perf_counter()
+        linear_solve_time.append(t1 - t0)
+        candidate_state = state + dx
+        new_r, _, _, _ = build_linear_system(problem, candidate_state)
+        new_cost = 0.5 * float(np.sum(new_r * new_r))
 
         # ======= STUDENT TODO END (do not change code outside this block) =======
         
@@ -166,6 +179,8 @@ def solve_graph_slam(
         if abs(cost - new_cost) / max(cost, 1.0) < cost_tol:
             cost_history.append(new_cost)
             break
+
+    print("mean time", np.mean(np.array(linear_solve_time)))
 
     final_r, final_J, final_poses, final_landmarks = build_linear_system(problem, state)
     final_cost = 0.5 * float(np.sum(final_r * final_r))

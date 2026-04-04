@@ -345,6 +345,8 @@ def main() -> None:
 
     # --- Run and save ICP --- # 
     icp_data = compute_icp_chains(static_data["static_points"], args.voxel_size, args.icp_max_corr, args.icp_iters)
+    # for i in range(100):
+    #     print(f"{i} frame comp:", icp_data["trajectory"][i], static_data["gt_poses_se2"][i])
     icp_layers = accumulate_and_rasterize(static_data["static_points"], icp_data["trajectory"], gt_map["map_spec"])
     save_map_layers("icp", icp_layers, gt_map["map_spec"], out_paths["maps"], icp_data["trajectory"][:, :2])
     if args.command == "icp":

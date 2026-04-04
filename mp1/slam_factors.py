@@ -4,7 +4,8 @@ import math
 
 import numpy as np
 
-from utils.geometry_utils import normalize_angle
+from utils.geometry_utils import normalize_angle, se2_to_matrix
+
 
 def motion_error_and_jacobians(
     pose_i: np.ndarray,
@@ -32,8 +33,28 @@ def motion_error_and_jacobians(
     # TODO(student): implement the motion error and Jacobians analytically
 
     # placeholder
-    raise NotImplementedError("Not implemented")
+    x_i, y_i, theta_i = pose_i
+    x_j, y_j, theta_j = pose_j
+    dx, dy, dtheta = T_ji
+    c = np.cos(theta_i)
+    s = np.sin(theta_i)
+    residual = np.array(
+        [
+            x_j - (x_i + c * dx - s * dy),
+            y_j - (y_i + s * dx + c * dy),
+            normalize_angle(theta_j - (theta_i + dtheta)),
+        ]
+    )
 
+    J_i = np.array(
+        [
+            [-1, 0, s * dx + c * dy],
+            [0, -1, -c * dx + s * dy],
+            [0, 0, -1],
+        ]
+    )
+
+    J_j = np.eye(3)
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
     return residual, J_i, J_j
