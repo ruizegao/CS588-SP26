@@ -1,0 +1,11 @@
+numpy
+scipy
+tqdm
+opencv-python
+matplotlib
+torch
+torchvision
+tensorboard
+pykitti
+rerun-sdk
+shapely
