@@ -299,6 +299,27 @@ def encode_targets(
     #        rot[out_count]       = [sin(yaw), cos(yaw)]
     #        cls_targets[out_count] = cls_id
 
+    res = bev_cfg.output_resolution
+    u_fs, v_fs, valid = metric_to_output_grid(boxes[:, 0], boxes[:, 1], bev_cfg)
+    N = min(len(u_fs), max_objs)
+    for i in range(N):
+        if valid[i]:
+            u_f, v_f = u_fs[i], v_fs[i]
+            u_i, v_i = int(u_f), int(v_f)
+            inds[i] = v_i * w_out + u_i
+            mask[i] = 1
+            reg[i] = [u_f - u_i, v_f - v_i]
+            obj_w = h_out / res
+            obj_h = w_out / res
+            radius = max(target_cfg.min_gaussian_radius, int(gaussian_radius((obj_h, obj_w), target_cfg.gaussian_overlap)))
+            draw_gaussian(heatmap[class_ids[i]], center=(u_i, v_i), radius=radius)
+            height[i] = boxes[i, 2]
+            dims[i] = np.log(boxes[i, 3:6])
+            rot[i] = np.array([np.sin(boxes[i, -1]), np.cos(boxes[i, -1])])
+            cls_targets[i] = class_ids[i]
+
+
+
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
     return {
@@ -342,10 +363,25 @@ def decode_targets(
     #   6. Recover yaw: np.arctan2(rot[:,0], rot[:,1])
     #   7. Stack into (N,7) and return with class ids and unit scores.
 
-    # placeholders
-    boxes = np.zeros((0, 7), dtype=np.float32)
-    classes = np.zeros((0,), dtype=np.int64)
-    scores = np.zeros((0,), dtype=np.float32)
+    mask = encoded["mask"].astype(np.bool)
+    h_out, w_out = bev_cfg.output_grid_size
+    ys = encoded['inds'][mask] // w_out
+    xs = encoded['inds'][mask] % w_out
+    reg = encoded['reg'][mask]
+    u = xs + reg[:, 0]
+    v = ys + reg[:, 1]
+    x, y = output_grid_to_metric(u, v, bev_cfg)
+    z = encoded['height'][mask].squeeze(-1)
+    dims = np.exp(encoded['dims'][mask])
+    l = dims[:, 0]
+    w = dims[:, 1]
+    h = dims[:, 2]
+    rot = encoded['rot'][mask]
+    yaw = np.arctan2(rot[:, 0], rot[:, 1])
+    boxes = np.stack([x, y, z, l, w, h, yaw], axis=-1)
+
+    classes = encoded['cls_ids'][mask]
+    scores = np.ones((mask.sum(),), dtype=np.float32)
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
     return boxes, classes, scores
@@ -386,7 +422,9 @@ def _nms_heatmap(heatmap: torch.Tensor, kernel: int = 3) -> torch.Tensor:
     #   4. Return heatmap * keep (zeros out non-maxima).
 
     # placeholder — passes heatmap through unchanged (no suppression)
-    return heatmap
+    pooled = F.max_pool2d(heatmap, kernel_size=kernel, stride=1, padding=(kernel - 1) // 2)
+    keep = pooled == heatmap
+    return heatmap * keep
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
@@ -539,16 +577,51 @@ def decode_predictions(
     #   8. Recover yaw: torch.atan2(rot[...,0], rot[...,1])
     #   9. Filter by score_threshold; stack into (N,7) boxes per batch item.
 
-    # placeholders
+    hm_prob = torch.sigmoid(preds["heatmap"]).clamp(1e-4, 1 - 1e-4)
+    hm_nms = _nms_heatmap(heatmap=hm_prob,)
+    scores, inds, clses, ys, xs = _topk(hm_nms, k=topk)
+    reg = _transpose_and_gather_feat(preds["reg"], inds)  # (B, k, 2)
+    xs = xs + reg[..., 0]  # refine with sub-cell offset
+    ys = ys + reg[..., 1]
+    h_out, w_out = bev_cfg.output_grid_size
+    res = bev_cfg.output_resolution
+    x = (bev_cfg.x_min + xs * res).unsqueeze(-1)
+    y = (bev_cfg.y_min + ((h_out - 1) - ys) * res).unsqueeze(-1)
+    z = _transpose_and_gather_feat(preds["height"], inds)
+    dims = _transpose_and_gather_feat(preds["dims"], inds)  # (B, k, 3)
+    if target_cfg.use_log_dims:
+        dims = torch.exp(dims)
+    rot = _transpose_and_gather_feat(preds["rot"], inds)  # (B, k, 2)
+    yaw = torch.atan2(rot[...,0], rot[...,1]).unsqueeze(-1)
+    # mask = scores > score_threshold
+    # print("x", x.shape)
+    # print("y", y.shape)
+    # print("z", z.shape)
+    # print("dims", dims.shape)
+    # print("yaw", rot.shape)
+    boxes = torch.concatenate([x, y, z, dims, yaw], dim=-1)#[mask]
+    # scores = scores[mask]
+    # classes = clses[mask]
+    # print(mask.shape)
     bsz = list(preds.values())[0].shape[0]
     out = [
         {
-            "boxes": np.zeros((0, 7), dtype=np.float32),
-            "scores": np.zeros((0,), dtype=np.float32),
-            "classes": np.zeros((0,), dtype=np.int64),
+            "boxes": boxes[i][scores[i] > score_threshold].detach().cpu().numpy(),
+            "scores": scores[i][scores[i] > score_threshold].detach().cpu().numpy(),
+            "classes": clses[i][scores[i] > score_threshold].detach().cpu().numpy(),
         }
-        for _ in range(bsz)
+        for i in range(bsz)
     ]
+    # # placeholders
+    # bsz = list(preds.values())[0].shape[0]
+    # out = [
+    #     {
+    #         "boxes": np.zeros((0, 7), dtype=np.float32),
+    #         "scores": np.zeros((0,), dtype=np.float32),
+    #         "classes": np.zeros((0,), dtype=np.int64),
+    #     }
+    #     for _ in range(bsz)
+    # ]
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
     return out

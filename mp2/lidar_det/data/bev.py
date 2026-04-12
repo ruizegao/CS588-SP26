@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Tuple
 
 import numpy as np
+import torch
 
 from lidar_det.config import BEVConfig
 
@@ -117,7 +118,35 @@ def rasterize_points_to_bev(points: np.ndarray, cfg: BEVConfig) -> np.ndarray:
     # placeholder
     c = len(cfg.channels)
     h, w = cfg.grid_size
-    return np.zeros((c, h, w), dtype=np.float32)
+
+    row, col, valid = metric_to_grid(points[:, 0], points[:, 1], cfg)
+    raw_z = points[:, 2].copy()
+    z_valid = valid & (raw_z >= cfg.z_min) & (raw_z <= cfg.z_max)
+    flat_idx = row[z_valid] * w + col[z_valid]
+    count = np.bincount(flat_idx, minlength=h * w)
+
+    filtered_z = raw_z[z_valid]
+    max_height = np.full(h * w, cfg.z_min)
+    np.maximum.at(max_height, flat_idx, filtered_z)
+    sum_height = np.bincount(flat_idx, weights=filtered_z, minlength=h * w)
+    denom_count = np.maximum(count, 1)
+    mean_height = sum_height / denom_count
+
+    max_height = (max_height - cfg.z_min) / (cfg.z_max - cfg.z_min)
+    max_height[count == 0] = 0
+    mean_height = (mean_height - cfg.z_min) / (cfg.z_max - cfg.z_min)
+    mean_height[count == 0] = 0
+
+    raw_intensity = points[:, 3].copy()
+    filtered_intensity = raw_intensity[z_valid]
+    sum_intensity = np.bincount(flat_idx, weights=filtered_intensity, minlength=h * w)
+    mean_intensity = sum_intensity / denom_count
+
+    density = (np.log1p(count) / np.log1p(64)).clip(min=0, max=1)
+
+    output = np.stack([max_height, mean_height, mean_intensity, density], axis=0).reshape(c, h, w)
+
+    return output
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
