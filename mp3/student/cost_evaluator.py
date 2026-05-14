@@ -31,6 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from fontTools.cffLib import width
 from waymax import datatypes
 
 from planner.collision import geometric_collision_mask       # noqa: F401 — used in TODO 2.1
@@ -93,8 +94,8 @@ def collision_cost(
     #      ego_size, and ego_id to get a boolean mask over timesteps.
     #   2. Return 1.0 if any element of the mask is True, else 0.0.
 
-    # placeholder — always reports no collision (unsafe — implement this first!)
-    return 0.0
+    mask = geometric_collision_mask(trajectory, predictions, ego_size, ego_id)
+    return float(mask.any())
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
@@ -127,8 +128,10 @@ def goal_cost(
     #   2. Clip reference_path.goal_s to at most 35 m ahead of the start.
     #   3. Return the non-negative shortfall between the clipped goal and the end.
 
-    # placeholder — zero cost (planner receives no incentive to make progress)
-    return 0.0
+    s0 = trajectory.s[0]
+    s_end = trajectory.s[-1]
+    s_local = min(reference_path.goal_s, s0 + 35)
+    return max(s_local - s_end, 0)
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
@@ -156,8 +159,7 @@ def jerk_cost(trajectory: TrajectorySample) -> float:
     #   2. Sum the squared arrays and take the mean across all timesteps.
     #   3. Return the result as a float.
 
-    # placeholder — zero jerk cost
-    return 0.0
+    return np.mean(trajectory.s_jerk ** 2 + trajectory.d_jerk ** 2).item()
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
@@ -188,8 +190,11 @@ def feasibility_cost(trajectory: TrajectorySample) -> float:
     #   2. Square each excess and take the mean over all timesteps.
     #   3. Return the sum of all three mean-squared penalties.
 
-    # placeholder — zero feasibility cost
-    return 0.0
+    return np.mean(
+        np.maximum(trajectory.speed - 25.0, 0.0) ** 2 +
+        np.maximum(np.abs(trajectory.accel) - 6.0, 0.0) ** 2 +
+        np.maximum(np.abs(trajectory.curvature) - 0.25, 0.0) ** 2
+    ).item()
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
@@ -222,8 +227,7 @@ def centerline_cost(
     #   2. Add 0.5 times trajectory.target_offset squared as a terminal penalty.
     #   3. Return the sum as a float.
 
-    # placeholder — zero centerline cost
-    return 0.0
+    return np.mean(trajectory.d ** 2).item() + trajectory.target_offset ** 2
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
@@ -273,6 +277,24 @@ def evaluate(
     #   4. Sum the six weighted terms to get the total cost for that trajectory.
     #   5. Return a NumPy array of shape (N,) with one total cost per candidate.
 
-    # placeholder
-    return np.zeros(len(trajectories), dtype=float)
+    if weights is None:
+        weights = CostConfig()
+
+    sdc_mask = np.asarray(state.object_metadata.is_sdc).astype(bool)
+    timestep = int(state.timestep)
+    ego_idx = int(np.flatnonzero(sdc_mask)[0])
+    length = state.sim_trajectory.length[ego_idx, timestep].item()
+    width = state.sim_trajectory.width[ego_idx, timestep].item()
+    ego_size = (length, width)
+    ego_id = state.object_metadata.ids[sdc_mask].item()
+    costs = []
+    for trajectory in trajectories:
+        cost = weights.w_collision * collision_cost(trajectory, predictions, ego_size, ego_id) + \
+            weights.w_goal * goal_cost(trajectory, reference_path) + \
+            weights.w_jerk * jerk_cost(trajectory) + \
+            weights.w_feasibility * feasibility_cost(trajectory) + \
+            weights.w_centerline * centerline_cost(trajectory, reference_path)
+        costs.append(cost)
+
+    return np.array(costs)
     # ======= STUDENT TODO END (do not change code outside this block) =======
