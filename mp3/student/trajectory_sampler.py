@@ -107,7 +107,26 @@ class QuinticPolynomial:
         #   6. Return QuinticPolynomial with coefficients [a0, a1, a2, a3, a4, a5].
 
         # placeholder — returns a zero polynomial (trajectory stays at start)
-        return QuinticPolynomial(np.zeros(6))
+        # return QuinticPolynomial(np.zeros(6))
+        p0, v0, a0_start = start
+        p1, v1, a1_start = end
+
+        a0 = p0
+        a1 = v0
+        a2 = a0_start / 2.
+
+        M = np.array([
+            [horizon_s**3, horizon_s**4, horizon_s**5],
+            [3*horizon_s**2, 4*horizon_s**3, 5*horizon_s**4],
+            [6*horizon_s, 12*horizon_s**2, 20*horizon_s**3],
+        ])
+        r = np.array([
+            [p1 - a0 - a1 * horizon_s - a2 * horizon_s**2],
+            [0. - a1 - 2*a2*horizon_s],
+            [0. - 2*a2],
+        ])
+        a3, a4, a5 = np.linalg.solve(M, r).squeeze(-1)
+        return QuinticPolynomial(np.array(a0, a1, a2, a3, a4, a5))
         # ======= STUDENT TODO END (do not change code outside this block) =======
 
     def evaluate(self, t: np.ndarray, order: int = 0) -> np.ndarray:
@@ -135,7 +154,16 @@ class QuinticPolynomial:
         #      (order=1, 2, or 3) evaluated at all time samples t.
 
         # placeholder — returns zeros
-        return np.zeros_like(np.asarray(t, dtype=float))
+        # return np.zeros_like(np.asarray(t, dtype=float))
+        a0, a1, a2, a3, a4, a5 = self.coeffs
+        if order == 0:
+            return a0 + a1*t + a2*t**2 + a3*t**3 + a4*t**4 + a5*t**5
+        if order == 1:
+            return a1 + 2*a2*t + 3*a3*t**2 + 4*a4*t**3 + 5*a5*t**4
+        if order == 2:
+            return 2*a2 + 6*a3*t + 12*a4*t**2 + 20*a5*t**3
+        if order == 3:
+            return 6*a3 + 24*a4*t + 60*a5*t**2
         # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
@@ -201,7 +229,24 @@ class QuarticPolynomial:
         #   6. Return QuarticPolynomial with coefficients [a0, a1, a2, a3, a4].
 
         # placeholder — returns a zero polynomial
-        return QuarticPolynomial(np.zeros(5))
+        # return QuarticPolynomial(np.zeros(5))
+        p0, v0, a0_start = start
+        a0 = p0
+        a1 = v0
+        a2 = a0_start / 2.
+
+        M = np.array([
+            [3 * horizon_s**2, 4 * horizon_s**3],
+            [6 * horizon_s, 12 * horizon_s**2]
+        ])
+
+        r = np.array([
+            [end_speed - a1 - 2*a2*horizon_s],
+            [end_accel - 2*a2]
+        ])
+
+        a3, a4 = np.linalg.solve(M, r).squeeze(-1)
+        return QuarticPolynomial(np.array([a0, a1, a2, a3, a4]))
         # ======= STUDENT TODO END (do not change code outside this block) =======
 
     def evaluate(self, t: np.ndarray, order: int = 0) -> np.ndarray:
@@ -229,7 +274,17 @@ class QuarticPolynomial:
         #      (order=1, 2, or 3) evaluated at all time samples t.
 
         # placeholder — returns zeros
-        return np.zeros_like(np.asarray(t, dtype=float))
+        # return np.zeros_like(np.asarray(t, dtype=float))
+        a0, a1, a2, a3, a4 = self.coeffs
+
+        if order == 0:
+            return a0 + a1*t + a2*t**2 + a3*t**3 + a4*t**4
+        if order == 1:
+            return a1 + 2*a2*t + 3*a3*t**2 + 4*a4*t**3
+        if order == 2:
+            return 2*a2 + 6*a3*t + 12*a4*t**2
+        if order == 3:
+            return 6*a3 + 24*a4*t
         # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
@@ -303,10 +358,14 @@ def sample_trajectories(
     target_speeds = np.maximum(0.0, ego_speed + TARGET_SPEED_DELTAS)
     target_accels = TARGET_ACCELS
     target_offsets = reference_path.lane_offsets
-
+    print("target_offset", target_offsets)
     # ======= STUDENT TODO START (edit only inside this block) =======
     # TODO(student): implement sample_trajectories
-
+    s0, d0 = project_to_frenet(reference_path, ego_xy)
+    _, ref_heading = frenet_to_cartesian(reference_path, s0, d0)
+    heading_error = ego_yaw - ref_heading
+    s_dot0 = ego_speed * np.cos(heading_error)
+    d_dot0 = ego_speed * np.sin(heading_error)
     # placeholder — returns an empty list (planner receives no candidates)
     return [TrajectorySample(
         times=times,
