@@ -227,7 +227,7 @@ def centerline_cost(
     #   2. Add 0.5 times trajectory.target_offset squared as a terminal penalty.
     #   3. Return the sum as a float.
 
-    return np.mean(trajectory.d ** 2).item() + trajectory.target_offset ** 2
+    return np.mean(trajectory.d ** 2).item() + 0.5 * trajectory.target_offset ** 2
     # ======= STUDENT TODO END (do not change code outside this block) =======
 
 
