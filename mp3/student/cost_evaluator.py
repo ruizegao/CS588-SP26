@@ -55,10 +55,10 @@ class CostConfig:
         w_feasibility: Weight for the feasibility cost.
         w_centerline:  Weight for the centerline deviation cost.
     """
-    w_collision:   float = 1.0
-    w_goal:        float = 1.0
-    w_jerk:        float = 1.0
-    w_feasibility: float = 1.0
+    w_collision:   float = 1.0 * 1e5
+    w_goal:        float = 1.0 * 5.0
+    w_jerk:        float = 1.0 * 5.0
+    w_feasibility: float = 1.0 * 1.0
     w_centerline:  float = 1.0
 
 

@@ -74,7 +74,14 @@ class PurePursuitController:
         #   4. Return the waypoint position and speed at that index.
 
         # placeholder -- always returns the last waypoint
-        return path_xy[-1], float(path_speeds[-1])
+        # return path_xy[-1], float(path_speeds[-1])
+        dist = np.linalg.norm(path_xy - ego_xy, axis=1)
+        mask = dist >= self.cfg.lookahead_dist
+        if mask.any():
+            waypoint_idx = int(np.flatnonzero(mask)[0])
+        else:
+            waypoint_idx = -1
+        return path_xy[waypoint_idx], path_speeds[waypoint_idx].item()
         # ======= STUDENT TODO END (do not change code outside this block) =======
 
     def compute_steering(
@@ -111,7 +118,17 @@ class PurePursuitController:
         #   5. Clamp kappa to [-max_curvature, +max_curvature] and return it.
 
         # placeholder -- zero steering (vehicle drives straight)
-        return 0.0
+        # return 0.0
+        disp = lookahead_xy - ego_xy
+        rot = np.array([
+            [np.cos(ego_yaw), np.sin(ego_yaw)],
+            [-np.sin(ego_yaw), np.cos(ego_yaw)]
+        ])
+        disp_local = disp @ rot.T
+        alpha = np.atan2(disp_local[1], disp_local[0])
+        kappa = 2 * np.sin(alpha) / self.cfg.lookahead_dist
+        kappa = np.clip(kappa, -self.cfg.max_curvature, self.cfg.max_curvature)
+        return float(kappa)
         # ======= STUDENT TODO END (do not change code outside this block) =======
 
     def compute_acceleration(
@@ -141,5 +158,9 @@ class PurePursuitController:
         #   3. Clamp to [min_accel, max_accel] and return.
 
         # placeholder -- zero acceleration (vehicle coasts to a stop)
-        return 0.0
+        # return 0.0
+        err_speed = target_speed - current_speed
+        gain_speed = self.cfg.speed_gain * err_speed
+        gain_speed = np.clip(gain_speed, self.cfg.min_accel, self.cfg.max_accel)
+        return float(gain_speed)
         # ======= STUDENT TODO END (do not change code outside this block) =======
